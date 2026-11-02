@@ -1,0 +1,6 @@
+.DS_Store
+build/
+*.4dbase/Logs/
+*.4dbase/userPreferences.*/
+/Convert Color Space.4dbase/Plugins/Convert Color Space.bundle/Contents/MacOS/Convert Color Space
+/Convert Color Space.4dbase/Plugins/Convert Color Space.bundle/Contents/_CodeSignature/
