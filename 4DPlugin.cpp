@@ -44,6 +44,17 @@ void CommandDispatcher (PA_long32 pProcNum, sLONG_PTR *pResult, PackagePtr pPara
 // ------------------------------ Convert Color Space -----------------------------
 
 
+// Clamp a colour component to [0,1] before scaling it to a byte: a value
+// outside that range (NaN, or out of gamut after a colour-space conversion)
+// would otherwise make the floating-point -> unsigned cast undefined, or
+// carry into the neighbouring channel.
+static NSUInteger component_to_byte(CGFloat v)
+{
+	if(!(v > 0.0)) return 0;      // also catches NaN
+	if(v >= 1.0) return 0xFF;
+	return (NSUInteger)floor((v * 0xFF) + 0.5);
+}
+
 void Convert_color_space(sLONG_PTR *pResult, PackagePtr pParams)
 {
 	C_LONGINT Param1;
@@ -53,43 +64,51 @@ void Convert_color_space(sLONG_PTR *pResult, PackagePtr pParams)
 	Param1.fromParamAtIndex(pParams, 1);
 	Param2.fromParamAtIndex(pParams, 2);
 
-    NSUInteger color = Param1.getIntValue();
-    CGFloat red, green, blue, alpha;
-    
-    alpha    = 1.0f;
-    red      = (CGFloat)((color & 0x00FF0000) >> 16)  / 0xFF;
-	green    = (CGFloat)((color & 0x0000FF00) >> 8)   / 0xFF;
-	blue     = (CGFloat)((color & 0x000000FF))        / 0xFF;
+	@autoreleasepool
+	{
+		NSUInteger color = (NSUInteger)(unsigned int)Param1.getIntValue();
+		CGFloat red, green, blue, alpha;
 
-    CGFloat components[4] = {red, green, blue, alpha};
-    NSColor *tempColor;
-    
-	switch (Param2.getIntValue())
-    {
-        case 0:
-            //from picker color
-            tempColor = [NSColor colorWithColorSpace:[NSColorSpace genericRGBColorSpace]components:components count:4];
-            tempColor = [tempColor colorUsingColorSpace:[NSColorSpace sRGBColorSpace]];
-            [tempColor getRed:&red green:&green blue:&blue alpha:&alpha];
-            color = 0x0000
-                    +((NSUInteger)floor((CGFloat)(red      * 0xFF) + 0.5f) << 16)
-                    +((NSUInteger)floor((CGFloat)(green    * 0xFF) + 0.5f) << 8)
-                    + (NSUInteger)floor((CGFloat)(blue     * 0xFF) + 0.5f);
-        break;
-            //to picker color
-        default:
-            tempColor = [NSColor colorWithColorSpace:[NSColorSpace sRGBColorSpace]components:components count:4];
-            tempColor = [tempColor colorUsingColorSpace:[NSColorSpace genericRGBColorSpace]];
-            
-            [tempColor getRed:&red green:&green blue:&blue alpha:&alpha];
-            color = 0x0000
-                    +((NSUInteger)floor((CGFloat)(red      * 0xFF) + 0.5f) << 16)
-                    +((NSUInteger)floor((CGFloat)(green    * 0xFF) + 0.5f) << 8)
-                    + (NSUInteger)floor((CGFloat)(blue     * 0xFF) + 0.5f);
-        break;
-    }
+		alpha    = 1.0f;
+		red      = (CGFloat)((color & 0x00FF0000) >> 16)  / 0xFF;
+		green    = (CGFloat)((color & 0x0000FF00) >> 8)   / 0xFF;
+		blue     = (CGFloat)((color & 0x000000FF))        / 0xFF;
 
-    returnValue.setIntValue(color);
+		CGFloat components[4] = {red, green, blue, alpha};
+		NSColorSpace *fromSpace;
+		NSColorSpace *toSpace;
+
+		switch (Param2.getIntValue())
+		{
+			case 0:
+				//from picker color
+				fromSpace = [NSColorSpace genericRGBColorSpace];
+				toSpace = [NSColorSpace sRGBColorSpace];
+				break;
+			default:
+				//to picker color
+				fromSpace = [NSColorSpace sRGBColorSpace];
+				toSpace = [NSColorSpace genericRGBColorSpace];
+				break;
+		}
+
+		NSColor *tempColor = [NSColor colorWithColorSpace:fromSpace components:components count:4];
+		tempColor = [tempColor colorUsingColorSpace:toSpace];
+
+		// colorUsingColorSpace: returns nil if the conversion fails; the input
+		// components are then returned unchanged (as before, when the message
+		// to nil left red/green/blue untouched).
+		if(tempColor)
+		{
+			[tempColor getRed:&red green:&green blue:&blue alpha:&alpha];
+		}
+
+		color = (component_to_byte(red) << 16)
+			  + (component_to_byte(green) << 8)
+			  +  component_to_byte(blue);
+
+		returnValue.setIntValue((int)color);
+	}
+
 	returnValue.setReturn(pResult);
 }
-
