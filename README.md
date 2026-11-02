@@ -54,7 +54,7 @@ result := Convert color space ( color ; direction )
 
 The exact numbers come from macOS's color management (ColorSync), so they can differ slightly between macOS versions. For example, on macOS 26 pure red `0x00FF0000` becomes `0x00FF2600` with `From picker color`, and `0x00FB0007` with `To picker color`.
 
-Since the 2026 modernization, each converted channel is clamped to 0–255, and if macOS can't perform the conversion, the input color is returned unchanged. For ordinary inputs the results are the same as in earlier versions.
+From 14.3.0, each converted channel is clamped to 0–255, and if macOS can't perform the conversion, the input color is returned unchanged. For ordinary inputs the results are the same as in earlier versions.
 
 ### Example
 
