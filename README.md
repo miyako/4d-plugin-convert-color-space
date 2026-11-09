@@ -12,6 +12,27 @@ A 4D plugin that converts a 4D RGB color value (Longint `0x00RRGGBB`) between th
 
 Releases: [github.com/miyako/4d-plugin-convert-color-space/releases](https://github.com/miyako/4d-plugin-convert-color-space/releases)
 
+## Maintainer release workflow
+
+1. Run **Bump version** on the desired branch and select `patch`, `minor`, or `major`. It validates the coordinated source version, commits only `Convert Color Space.xcodeproj/project.pbxproj` and `Info.plist`, and pushes that branch without force or follow-tags. It rejects a branch that moved since selection. It creates no tag/release and does not start Build.
+2. Run **Build** separately on the desired branch using the Actions branch selector (no inputs), or `gh workflow run release.yml --ref <branch>`. Every checkout uses the immutable selected `github.sha`, not the moving branch tip. The strict `X.Y.Z` source version determines the release tag `vX.Y.Z`; no version is incremented by Build.
+3. Build preserves the universal macOS build and binary/resource checks, Developer ID signing, ZIP/DMG notarization, and DMG stapling. There is no Windows build: the committed Windows64 payload is shipped unchanged. Assets remain `Convert Color Space-X.Y.Z.zip` and `Convert Color Space-X.Y.Z.dmg`. Release notes remain empty (no generated notes).
+
+`MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in **all** Xcode configurations and source `Info.plist`'s `CFBundleShortVersionString` (plus `CFBundleVersion` if present) share one version. This coordination was introduced together in the modernization commit; these are not independent build counters. Recognized `$(MARKETING_VERSION)` / `$(CURRENT_PROJECT_VERSION)` plist references are preserved, not replaced. Unknown references, malformed versions, and drift fail before bumping or publishing. The committed bundle's old generated `Contents/Info.plist`, prebuilt Windows payload, dependency/API versions, plist format versions, and 4D database metadata are not release-version sources and are not rewritten.
+
+Build runs are serialized repository-wide across branches with cancellation disabled. Both preflight and the final publication step reject an existing remote tag or any same-tag release, including drafts, using authenticated paginated release-list requests. An API/authentication/network error (including 404), malformed response, or failed later page stops publication; absence is accepted only after the entire listing succeeds.
+
+After every required build/signing/notarization gate succeeds, publication rechecks availability, non-force pushes a new lightweight tag at exactly the selected SHA, rejects even a same-SHA tag creation race, and verifies the remote target. It then uses a create-only REST `POST` with explicit tag, SHA, name, `draft=false`, `prerelease=false`, and empty notes, followed by asset upload without `--clobber`. It never updates an existing release or deletes/rolls back/retries a failed publication.
+
+**Recovery:** A failed release creation leaves its tag; a failed upload leaves the published release and any uploaded assets. Read the failure log and inspect the remote tag target, all releases (including drafts), and assets before deciding on manual recovery. Rerunning the same version intentionally fails; do not expect an automatic overwrite or cleanup. Reconcile partial state explicitly, or prepare a new source version with Bump version and run Build separately. Neither workflow is triggered by a push or pull request; this repository currently has no unrelated automatic CI workflows.
+
+Local lifecycle regressions (no native build, signing, notarization, dispatch, or publication):
+
+```sh
+python3 -m unittest discover -s .github/scripts -p 'test_*.py'
+actionlint .github/workflows/bump-version.yml .github/workflows/release.yml
+```
+
 ---
 
 ## Requirements & platform notes
