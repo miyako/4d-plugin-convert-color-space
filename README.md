@@ -24,7 +24,7 @@ Build runs are serialized repository-wide across branches with cancellation disa
 
 After every required build/signing/notarization gate succeeds, publication rechecks availability, non-force pushes a new lightweight tag at exactly the selected SHA, rejects even a same-SHA tag creation race, and verifies the remote target. It then uses a create-only REST `POST` with explicit tag, SHA, name, `draft=false`, `prerelease=false`, and empty notes, followed by asset upload without `--clobber`. It never updates an existing release or deletes/rolls back/retries a failed publication.
 
-**Recovery:** A failed release creation leaves its tag; a failed upload leaves the published release and any uploaded assets. Read the failure log and inspect the remote tag target, all releases (including drafts), and assets before deciding on manual recovery. Rerunning the same version intentionally fails; do not expect an automatic overwrite or cleanup. Reconcile partial state explicitly, or prepare a new source version with Bump version and run Build separately. Neither workflow is triggered by a push or pull request; this repository currently has no unrelated automatic CI workflows.
+**Recovery:** A failed release creation leaves its tag; a failed upload leaves the published release and any uploaded assets. Read the failure log and inspect the remote tag target, all releases (including drafts), and assets before deciding on manual recovery. Rerunning the same version intentionally fails; do not expect an automatic overwrite or cleanup. Reconcile partial state explicitly, or prepare a new source version with Bump version and run Build separately. Neither release workflow is triggered by a push or pull request. The separate **Native ownership** CI runs unsigned tests only; it does not build a plugin bundle, sign, package, notarize, or publish anything.
 
 Local lifecycle regressions (no native build, signing, notarization, dispatch, or publication):
 
@@ -32,6 +32,55 @@ Local lifecycle regressions (no native build, signing, notarization, dispatch, o
 python3 -m unittest discover -s .github/scripts -p 'test_*.py'
 actionlint .github/workflows/bump-version.yml .github/workflows/release.yml
 ```
+
+## Native wrapper ownership regression
+
+Both project files compile the shared native wrappers even though the only
+dispatched command takes and returns Longints. CPicture's file-path argument
+owns its assigned string and is cleared once; the wrapper retains the borrowed
+picture before clearing the output argument. Newly created picture temporaries
+are released after the wrapper retains them. Arguments immediately assigned a
+string or picture start Undefined, avoiding overwritten allocated empties.
+Charset conversion returns bytes, which `createCopy` converts to UTF-16 units.
+The public color conversion command and bundle metadata are unchanged.
+
+On macOS with Xcode command-line tools, run:
+
+```sh
+python3 tests/run_native_ownership.py
+# The same harness must fail on the immutable original sources:
+python3 tests/run_native_ownership.py --baseline 5bd06fbf41198ca0031502b7ffa94a5136c5823a
+```
+
+The harness compiles the actual dispatcher, all 16 wrapper implementations and
+the entire unchanged bundled `4DPluginAPI.c`; it replaces only the host engine
+callback. It uses ASan/UBSan and explicit string, handle and picture-reference
+balances (macOS LeakSanitizer is disabled). It exercises allocated/null empty
+strings, exact ASCII/BMP/supplementary text, picture handoffs/replacement,
+unchanged-on-error synchronous commands, scalar content setters and array
+transfer/rejection/replacement/shrink/clear. Test outputs live in a temporary
+directory, not the tracked bundle.
+
+The SDK implementation originated in repository commit
+`9fd4821c277564da7b75efd16df5224bc5e0116a`; its SHA-256 is
+`355ee208ad6c61dcc68e8432546fc42484888211dd07ed8fa3fdb4440f3edbd8`.
+The v13 header/v14 source comments and initialization's `0x00001400` are not
+proof of an upstream SDK release identity. The array setter at lines 4444-4458
+disposes the old element and shallow-transfers only for Unicode arrays with
+data, an inclusive index from zero to the element count, and a non-null
+descriptor. Rejections retain caller ownership; getters borrow. Scalar
+string/picture setters shallow-assign without clearing an old value;
+`PA_SetUnistring`/`PA_ReturnString` instead use the engine content setter.
+
+This is host-shim evidence, not execution in 4D or Windows certification.
+`C_POINTER::getVariable` interprets pointer results as reference metadata;
+ownership cannot safely be inferred from its generic getter cleanup comment,
+so no speculative clear was added. Picture-data/application-path returned
+string ownership is also unspecified by this SDK and left unchanged. Object/
+collection getters and JSON callbacks are absent from this SDK/wrapper set.
+All five CPicture command IDs are procedures; no owning function result was
+identified. SDK resize allocation-failure count corruption is outside scope;
+normal-array tests do not certify out-of-memory behavior.
 
 ---
 

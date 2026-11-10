@@ -1,0 +1,18 @@
+name: Native ownership
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  native-ownership:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Native wrappers and unchanged bundled SDK (ASan and UBSan)
+        run: python3 tests/run_native_ownership.py
+      - name: Release lifecycle regressions (no publication)
+        run: python3 -m unittest discover -s .github/scripts -p 'test_*.py'
